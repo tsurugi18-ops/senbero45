@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="せんべろ45">
+<meta name="theme-color" content="#111317">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
+<script>window.__PWA__=true</script>
+<title>せんべろ45 タイマー</title>
+<style>
+/* Layout: 上部バー + 6列×4段グリッドが残りの高さを等分。タイルは4段（番号・状態 / 残り時間 / 残り杯数 / 操作） */
+:root{
+  --bg:#111317; --bar:#1b1e24; --line:#2c3039; --ink:#f4f2ed; --muted:#8e94a1;
+  --shade:rgba(0,0,0,.24); --shade-strong:rgba(0,0,0,.38);
+  --empty:#1d2026; --wait:#3d434f; --run:#16804a; --lo:#f2bb0c; --end:#d1302a; --stop:#2b6bd6;
+  --ink-dark:#1e1704;
+  --f-num: ui-rounded,"SF Pro Rounded","Hiragino Maru Gothic ProN","Hiragino Sans",system-ui,sans-serif;
+  --f-ui: "Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{height:100%;box-sizing:border-box}
+body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-ui);
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;overflow:hidden}
+button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer;border:0;background:none;padding:0;margin:0}
+button:disabled{cursor:default}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+
+.app{height:100%;display:flex;flex-direction:column;gap:8px;padding-block:8px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* ===== 上部バー ===== */
+header{flex:none;height:52px;display:flex;align-items:center;gap:14px}
+.brand{font-family:var(--f-num);font-weight:800;font-size:20px;white-space:nowrap;display:flex;align-items:baseline;gap:6px}
+.brand span{font-size:13px;color:var(--muted);font-weight:600}
+.stats{display:flex;gap:14px;font-size:13px;color:var(--muted);white-space:nowrap}
+.stats b{font-family:var(--f-num);font-size:19px;color:var(--ink);font-variant-numeric:tabular-nums;margin-left:3px}
+.spacer{flex:1}
+.clock{font-family:var(--f-num);font-size:19px;color:var(--muted);font-variant-numeric:tabular-nums}
+.hbtn{height:48px;padding:0 22px;border-radius:12px;font-weight:700;font-size:17px;
+  background:var(--bar);border:1px solid var(--line);white-space:nowrap}
+.hbtn:active{filter:brightness(1.3)}
+.hbtn.on{background:var(--stop);border-color:var(--stop)}
+.banner{display:none;font-weight:700;color:var(--ink);background:var(--stop);border-radius:8px;padding:4px 10px;font-size:14px}
+.gp .banner{display:block}
+
+/* ===== グリッド ===== */
+.grid{flex:1;min-height:0;display:grid;gap:8px;
+  grid-template-columns:repeat(6,minmax(0,1fr));grid-template-rows:repeat(4,minmax(0,1fr))}
+.tile{container-type:size;position:relative;border-radius:14px;overflow:hidden;
+  display:grid;grid-template-rows:20% 1fr 1fr 25%;gap:3%;padding:5%;
+  background:var(--empty);transition:background-color .25s}
+.s-wait{background:var(--wait)}
+.s-run{background:var(--run)}
+.s-lo{background:var(--lo);color:var(--ink-dark)}
+.s-end{background:var(--end)}
+.s-stop{background:var(--stop)}
+
+.r1{display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0}
+.num{font-family:var(--f-num);font-weight:800;font-size:15cqh;line-height:1;display:flex;align-items:baseline;gap:2px;
+  padding:1cqh 2cqw;margin:-1cqh -2cqw;border-radius:8px;font-variant-numeric:tabular-nums}
+.num small{font-size:.55em;opacity:.75;font-weight:700}
+.num:active{background:var(--shade)}
+.state{font-size:9cqh;font-weight:800;padding:1cqh 3.5cqw;border-radius:99px;background:var(--shade);white-space:nowrap;letter-spacing:.04em}
+.s-lo .state,.s-end .state{background:var(--shade-strong);color:var(--ink)}
+
+.time{font-family:var(--f-num);font-weight:800;font-variant-numeric:tabular-nums;line-height:1;
+  font-size:min(27cqh,25cqw);display:flex;align-items:center;justify-content:center;letter-spacing:.01em}
+.s-wait .time{opacity:.45}
+
+.cups{border-radius:10px;background:var(--shade);display:flex;align-items:center;justify-content:center;gap:2cqw;line-height:1}
+.cups b{font-family:var(--f-num);font-weight:800;font-size:min(22cqh,20cqw);font-variant-numeric:tabular-nums}
+.cups .cl{font-size:8.5cqh;font-weight:700;opacity:.85}
+.cups:active:not(:disabled){background:var(--shade-strong)}
+.cups.zero b{opacity:.45}
+.cups.flash{animation:flash .45s ease-out}
+@keyframes flash{0%{background:rgba(255,255,255,.55)}100%{background:var(--shade)}}
+.cups .go{font-size:10cqh;font-weight:800;background:var(--run);color:var(--ink);border-radius:8px;
+  height:100%;width:100%;display:flex;align-items:center;justify-content:center;gap:1.5cqw}
+.cups.start{background:transparent;padding:0}
+
+.ops{display:grid;grid-template-columns:1.25fr 1fr;gap:5cqw}
+.ops button{border-radius:9px;font-weight:800;font-size:9.5cqh;background:var(--shade)}
+.ops button:active:not(:disabled){background:var(--shade-strong)}
+.ops .exit{background:transparent;box-shadow:inset 0 0 0 2px currentColor;opacity:.85}
+.ops button:disabled{opacity:.3}
+
+.face{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:4cqh;
+  border:2px dashed var(--line);border-radius:14px;color:var(--muted)}
+.face .plus{font-family:var(--f-num);font-size:28cqh;line-height:.8;font-weight:300}
+.face .lbl{font-size:10cqh;font-weight:700}
+.face:active{background:var(--bar)}
+.s-empty .face{display:flex}
+.s-empty .r1,.s-empty .time,.s-empty .cups,.s-empty .ops{visibility:hidden}
+
+/* ===== モーダル ===== */
+.scrim{position:fixed;inset:0;background:rgba(5,6,8,.72);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.sheet{background:var(--bar);border:1px solid var(--line);border-radius:20px;padding:22px;width:min(420px,100%);
+  display:flex;flex-direction:column;gap:14px;max-height:100%;overflow:auto}
+.sheet h2{margin:0;font-size:19px;font-weight:800;text-wrap:balance}
+.sheet p{margin:0;color:var(--muted);font-size:15px;line-height:1.6}
+.disp{height:76px;border-radius:14px;background:var(--bg);display:flex;align-items:center;justify-content:center;
+  font-family:var(--f-num);font-size:52px;font-weight:800;font-variant-numeric:tabular-nums}
+.disp.ph{color:var(--muted);font-size:20px;font-weight:600;font-family:var(--f-ui)}
+.err{min-height:20px;color:#ff7a73;font-weight:700;font-size:15px;text-align:center}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pad button{height:68px;border-radius:14px;background:var(--wait);font-family:var(--f-num);font-size:30px;font-weight:700}
+.pad button.fn{font-family:var(--f-ui);font-size:18px;background:var(--line)}
+.pad button:active{filter:brightness(1.35)}
+.row{display:grid;grid-template-columns:1fr 1.4fr;gap:12px}
+.btn{height:60px;border-radius:14px;font-weight:800;font-size:18px;background:var(--line)}
+.btn.ok{background:var(--run)}
+.btn.danger{background:var(--end)}
+.btn:disabled{opacity:.35}
+.btn:active:not(:disabled){filter:brightness(1.25)}
+.mlist{display:flex;flex-direction:column;gap:10px}
+.mlist .btn{text-align:left;padding:0 18px;display:flex;justify-content:space-between;align-items:center}
+.mlist .btn span{font-size:13px;color:var(--muted);font-weight:600}
+.picks{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.picks button{height:72px;border-radius:14px;background:var(--wait);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.picks b{font-family:var(--f-num);font-size:26px;font-weight:800}
+.picks span{font-size:12px;color:var(--muted)}
+.picks button:disabled{opacity:.3}
+.none{color:var(--muted);text-align:center;padding:12px 0}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--bg);font-weight:700;padding:12px 20px;border-radius:12px;z-index:30;
+  opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+
+/* 縦向き（iPad縦）: 4列×6段 */
+@media (orientation:portrait) and (min-width:700px){
+  .grid{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(6,minmax(0,1fr))}
+}
+/* スマホ幅: 3列でスクロール */
+@media (max-width:699px){
+  body{overflow:auto}
+  .app{height:auto;min-height:100%}
+  header{flex-wrap:wrap;height:auto}
+  .stats,.clock{display:none}
+  .grid{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:none;grid-auto-rows:150px}
+}
+@media (prefers-reduced-motion:reduce){.tile{transition:none}.cups.flash{animation:none}}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <header>
+    <div class="brand">せんべろ45<span>45分・3杯</span></div>
+    <div class="stats">
+      <div>利用中<b id="stRun">0</b></div>
+      <div>待機<b id="stWait">0</b></div>
+      <div>空き<b id="stEmpty">24</b></div>
+    </div>
+    <div class="banner">全員停止中</div>
+    <div class="spacer"></div>
+    <div class="clock" id="clock">--:--</div>
+    <button class="hbtn" id="allBtn" type="button">全員停止</button>
+    <button class="hbtn" id="menuBtn" type="button">メニュー</button>
+  </header>
+  <main class="grid" id="grid" aria-label="番号札タイル"></main>
+</div>
+<div id="modal"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+'use strict';
+const LIMIT = 45*60*1000, LO = 10*60*1000, N = 24, KEY = 'senbero45.state.v1';
+const CUP_START = 2, CUP_MAX = 2, NUM_MAX = 999, CUP_GUARD_MS = 700;
+const $ = s => document.querySelector(s);
+
+/* ---------- 状態 ---------- */
+const blank = () => ({ num:null, phase:'empty', startAt:0, pausedTotal:0, frozenAt:null, selfPaused:false, cups:CUP_START });
+function load(){
+  try{
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if(s && Array.isArray(s.tiles) && s.tiles.length === N) return s;
+  }catch(e){}
+  return { globalPaused:false, tiles:Array.from({length:N}, blank) };
+}
+let S = load();
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+
+const frozen = t => t.phase === 'running' && (t.selfPaused || S.globalPaused);
+/* 停止状態の変化を経過時間に反映（停止中の時間は pausedTotal に加算） */
+function settle(t, was, now){
+  const is = frozen(t);
+  if(!was && is) t.frozenAt = now;
+  else if(was && !is){ t.pausedTotal += now - t.frozenAt; t.frozenAt = null; }
+}
+function change(i, fn){
+  const t = S.tiles[i], was = frozen(t), now = Date.now();
+  fn(t, now); settle(t, was, now); save(); update(i, Date.now()); stats();
+}
+const remain = (t, now) => Math.max(0, LIMIT - ((t.frozenAt ?? now) - t.startAt - t.pausedTotal));
+function status(t, now){
+  if(t.phase === 'empty') return ['empty','空き'];
+  if(t.phase === 'waiting') return ['wait','待機中'];
+  const r = remain(t, now);
+  if(r <= 0) return ['end','終了'];
+  if(frozen(t)) return ['stop','停止中'];
+  if(r <= LO) return ['lo','LO'];
+  return ['run','利用中'];
+}
+const fmt = ms => { const s = Math.ceil(ms/1000); return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); };
+const numUsed = (n, except) => S.tiles.some((t, j) => j !== except && t.num === n);
+
+/* ---------- タイル描画 ---------- */
+const grid = $('#grid'), V = [], lastCupTap = new Array(N).fill(0);
+for(let i = 0; i < N; i++){
+  const el = document.createElement('section');
+  el.className = 'tile s-empty'; el.dataset.i = i;
+  el.innerHTML =
+    '<div class="r1"><button class="num" type="button" data-a="num"></button><span class="state"></span></div>' +
+    '<div class="time"></div>' +
+    '<button class="cups" type="button" data-a="cup"></button>' +
+    '<div class="ops"><button type="button" data-a="pause"></button><button class="exit" type="button" data-a="exit">退店</button></div>' +
+    '<button class="face" type="button" data-a="num"><span class="plus">＋</span><span class="lbl">番号入力</span></button>';
+  grid.appendChild(el);
+  V.push({ el, num:el.querySelector('.num'), state:el.querySelector('.state'), time:el.querySelector('.time'),
+           cups:el.querySelector('.cups'), pause:el.querySelector('[data-a=pause]'), exit:el.querySelector('.exit'), key:{} });
+}
+function put(v, k, fn, val){ if(v.key[k] !== val){ v.key[k] = val; fn(val); } }
+function update(i, now){
+  const t = S.tiles[i], v = V[i], [k, label] = status(t, now);
+  put(v, 'cls', x => v.el.className = 'tile s-' + x, k);
+  put(v, 'state', x => v.state.textContent = x, label);
+  put(v, 'num', x => v.num.innerHTML = x, t.num == null ? '' : '<small>No.</small>' + t.num);
+  const tm = t.phase === 'empty' ? '' : t.phase === 'waiting' ? '45:00' : fmt(remain(t, now));
+  put(v, 'time', x => v.time.textContent = x, tm);
+  const cupHtml = t.phase === 'waiting'
+    ? '<span class="go">1杯目提供 ▶ 開始</span>'
+    : '<span class="cl">残り</span><b>' + t.cups + '</b><span class="cl">杯</span>';
+  put(v, 'cupH', x => v.cups.innerHTML = x, cupHtml);
+  put(v, 'cupC', x => v.cups.className = x, 'cups' + (t.phase === 'waiting' ? ' start' : '') + (t.phase === 'running' && t.cups === 0 ? ' zero' : ''));
+  v.cups.disabled = t.phase === 'running' && t.cups === 0;
+  v.cups.setAttribute('aria-label', t.phase === 'waiting' ? '1杯目提供、タイマー開始' : '1杯提供（残り' + t.cups + '杯）');
+  put(v, 'pl', x => v.pause.textContent = x, t.selfPaused ? '再開' : '停止');
+  v.pause.disabled = t.phase !== 'running' || (remain(t, now) <= 0 && !t.selfPaused);
+}
+function stats(){
+  let r = 0, w = 0, e = 0;
+  S.tiles.forEach(t => t.phase === 'running' ? r++ : t.phase === 'waiting' ? w++ : e++);
+  $('#stRun').textContent = r; $('#stWait').textContent = w; $('#stEmpty').textContent = e;
+  const b = $('#allBtn');
+  b.textContent = S.globalPaused ? '全員再開' : '全員停止';
+  b.classList.toggle('on', S.globalPaused);
+  $('#app').classList.toggle('gp', S.globalPaused);
+}
+function tick(){
+  const now = Date.now();
+  for(let i = 0; i < N; i++) update(i, now);
+  const d = new Date();
+  $('#clock').textContent = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+/* ---------- タイル操作 ---------- */
+grid.addEventListener('click', e => {
+  const b = e.target.closest('[data-a]'); if(!b || b.disabled) return;
+  const i = +b.closest('.tile').dataset.i, t = S.tiles[i], a = b.dataset.a;
+  if(a === 'num') return openPad(i);
+  if(a === 'exit') return openExit(i);
+  if(a === 'pause') return change(i, x => { x.selfPaused = !x.selfPaused; });
+  if(a === 'cup'){
+    if(t.phase === 'waiting'){
+      change(i, (x, now) => { x.phase = 'running'; x.startAt = now; x.pausedTotal = 0; x.frozenAt = null; x.selfPaused = false; x.cups = CUP_START; });
+      toast(t.num + '番 スタート');
+      return;
+    }
+    if(t.phase !== 'running' || t.cups <= 0) return;
+    const now = Date.now();
+    if(now - lastCupTap[i] < CUP_GUARD_MS) return;  // 連打防止
+    lastCupTap[i] = now;
+    change(i, x => { x.cups -= 1; });
+    const c = V[i].cups; c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash');
+  }
+});
+
+$('#allBtn').addEventListener('click', () => {
+  const now = Date.now(), was = S.tiles.map(frozen);
+  S.globalPaused = !S.globalPaused;
+  S.tiles.forEach((t, i) => settle(t, was[i], now));
+  save(); tick(); stats();
+  toast(S.globalPaused ? '全員停止しました' : '全員再開しました（個別停止はそのまま）');
+});
+$('#menuBtn').addEventListener('click', openMenu);
+
+/* ---------- モーダル ---------- */
+const modal = $('#modal');
+function show(html, onClick){
+  modal.innerHTML = '<div class="scrim"><div class="sheet" role="dialog" aria-modal="true">' + html + '</div></div>';
+  modal.firstChild.addEventListener('click', e => {
+    if(e.target === modal.firstChild) return close();
+    const b = e.target.closest('[data-m]'); if(b && !b.disabled) onClick(b.dataset.m, b);
+  });
+}
+function close(){ modal.innerHTML = ''; }
+
+function openPad(i){
+  const t = S.tiles[i]; let buf = '';
+  const title = t.num == null ? '番号札の番号を入力' : t.num + '番 → 番号を変更';
+  const keys = ['1','2','3','4','5','6','7','8','9','C','0','⌫']
+    .map(k => '<button type="button" data-m="k' + k + '"' + (k === 'C' || k === '⌫' ? ' class="fn"' : '') + '>' + (k === 'C' ? '消去' : k) + '</button>').join('');
+  show('<h2>' + title + '</h2><div class="disp ph" id="disp">番号札の数字</div><div class="err" id="err"></div>' +
+       '<div class="pad">' + keys + '</div>' +
+       '<div class="row"><button class="btn" type="button" data-m="cancel">キャンセル</button><button class="btn ok" type="button" data-m="ok" id="okB" disabled>決定</button></div>',
+  (m) => {
+    if(m === 'cancel') return close();
+    if(m === 'ok'){
+      const n = parseInt(buf, 10);
+      if(!n) return;
+      if(numUsed(n, i)){ $('#err').textContent = n + '番は使用中です'; return; }
+      const first = t.phase === 'empty';
+      change(i, x => { x.num = n; if(first) x.phase = 'waiting'; });
+      close(); toast(first ? n + '番 受付（待機中）' : n + '番に変更しました');
+      return;
+    }
+    const k = m.slice(1);
+    if(k === 'C') buf = ''; else if(k === '⌫') buf = buf.slice(0, -1);
+    else if(buf.length < String(NUM_MAX).length && !(buf === '' && k === '0')) buf += k;
+    const d = $('#disp'), n = parseInt(buf, 10);
+    d.textContent = buf || '番号札の数字'; d.classList.toggle('ph', !buf);
+    const dup = n && numUsed(n, i);
+    $('#err').textContent = dup ? n + '番は使用中です' : '';
+    $('#okB').disabled = !buf || dup;
+  });
+}
+
+function openExit(i){
+  const t = S.tiles[i], now = Date.now();
+  const info = t.phase === 'running' ? '残り ' + fmt(remain(t, now)) + '・残り ' + t.cups + '杯' : '待機中（未スタート）';
+  show('<h2>' + t.num + '番 退店しますか？</h2><p>' + info + '<br>番号・タイマー・杯数を消して空きに戻します。</p>' +
+       '<div class="row"><button class="btn" type="button" data-m="no">戻る</button><button class="btn danger" type="button" data-m="yes">退店する</button></div>',
+  m => {
+    if(m === 'yes'){ const n = t.num; change(i, x => Object.assign(x, blank())); close(); toast(n + '番 退店しました'); }
+    else close();
+  });
+}
+
+function openMenu(){
+  show('<h2>メニュー</h2><div class="mlist">' +
+       '<button class="btn" type="button" data-m="back">1杯戻す<span>押し間違いの取り消し</span></button>' +
+       '<button class="btn" type="button" data-m="reset">全タイルをリセット<span>営業終了時など</span></button>' +
+       '</div><button class="btn" type="button" data-m="close">閉じる</button>',
+  m => {
+    if(m === 'close') close();
+    if(m === 'back') openBack();
+    if(m === 'reset') openReset();
+  });
+}
+function openBack(){
+  const list = S.tiles.map((t, i) => ({ t, i })).filter(o => o.t.phase === 'running').sort((a, b) => a.t.num - b.t.num);
+  const body = list.length
+    ? '<div class="picks">' + list.map(o => '<button type="button" data-m="' + o.i + '"' + (o.t.cups >= CUP_MAX ? ' disabled' : '') + '><b>' + o.t.num + '</b><span>残り' + o.t.cups + '杯</span></button>').join('') + '</div>'
+    : '<div class="none">利用中の番号がありません</div>';
+  show('<h2>1杯戻す：番号を選択</h2><p>選んだ番号の残り杯数を1増やします（上限' + CUP_MAX + '杯）。</p>' + body +
+       '<button class="btn" type="button" data-m="close">閉じる</button>',
+  m => {
+    if(m === 'close') return close();
+    const i = +m, t = S.tiles[i];
+    if(t.cups >= CUP_MAX) return;
+    change(i, x => { x.cups = Math.min(CUP_MAX, x.cups + 1); });
+    close(); toast(t.num + '番 残り' + t.cups + '杯に戻しました');
+  });
+}
+function openReset(){
+  show('<h2>全タイルをリセットしますか？</h2><p>24タイルすべての番号・タイマー・杯数を消します。元に戻せません。</p>' +
+       '<div class="row"><button class="btn" type="button" data-m="no">戻る</button><button class="btn danger" type="button" data-m="yes">リセット</button></div>',
+  m => {
+    if(m === 'yes'){ S = { globalPaused:false, tiles:Array.from({length:N}, blank) }; save(); V.forEach(v => v.key = {}); tick(); stats(); close(); toast('リセットしました'); }
+    else close();
+  });
+}
+
+let toastT;
+function toast(msg){ const el = $('#toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 1800); }
+
+/* ---------- 画面スリープ防止・復帰・ズーム抑止 ---------- */
+let wl = null;
+async function wake(){ try{ if('wakeLock' in navigator && !wl){ wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } }catch(e){} }
+document.addEventListener('pointerdown', wake);
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ S = load(); V.forEach(v => v.key = {}); tick(); stats(); wake(); } });
+window.addEventListener('pagehide', save);
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+
+if(window.__PWA__ && 'serviceWorker' in navigator){
+  try{ navigator.serviceWorker.register('sw.js').catch(() => {}); }catch(e){}
+}
+
+tick(); stats();
+setInterval(tick, 250);
+})();
+</script>
+
+</body>
+</html>
